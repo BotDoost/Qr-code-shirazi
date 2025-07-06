@@ -8,8 +8,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const messageDiv = document.getElementById('message');
     
     // متغیرها
-    let qrCodeInstance = null;
     let currentQRCodeData = '';
+    let qrCodeImageUrl = '';
     
     // تولید QR Code
     function generateQRCode() {
@@ -20,83 +20,91 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        // اگر متن تغییر نکرده، دوباره تولید نکن
-        if (text === currentQRCodeData && qrCodeInstance) {
+        if (text === currentQRCodeData && qrCodeImageUrl) {
             showMessage('QR Code قبلاً برای این متن تولید شده است', 'success');
             return;
         }
         
-        // پاکسازی QR Code قبلی
+        // پاکسازی محتوای قبلی
         qrcodeContainer.innerHTML = '';
         
-        // تولید QR Code جدید
         try {
-            qrCodeInstance = new QRCode(qrcodeContainer, {
-                text: text,
+            // استفاده از API جدید QRCode.js
+            QRCode.toDataURL(text, {
                 width: 256,
                 height: 256,
-                colorDark: "#000000",
-                colorLight: "#ffffff",
-                correctLevel: QRCode.CorrectLevel.H
+                color: {
+                    dark: '#000000',
+                    light: '#ffffff'
+                },
+                errorCorrectionLevel: 'H'
+            }, function(err, url) {
+                if (err) {
+                    showMessage('خطا در تولید QR Code: ' + err.message, 'error');
+                    console.error('QR Code Error:', err);
+                    return;
+                }
+                
+                // نمایش QR Code
+                const img = document.createElement('img');
+                img.src = url;
+                img.alt = 'QR Code';
+                qrcodeContainer.appendChild(img);
+                
+                currentQRCodeData = text;
+                qrCodeImageUrl = url;
+                showMessage('QR Code با موفقیت تولید شد', 'success');
+                qrcodeContainer.classList.add('pulse');
+                
+                setTimeout(() => {
+                    qrcodeContainer.classList.remove('pulse');
+                }, 500);
             });
-            
-            currentQRCodeData = text;
-            showMessage('QR Code با موفقیت تولید شد', 'success');
-            qrcodeContainer.classList.add('pulse');
-            
-            setTimeout(() => {
-                qrcodeContainer.classList.remove('pulse');
-            }, 500);
-            
         } catch (error) {
             showMessage('خطا در تولید QR Code: ' + error.message, 'error');
-            console.error('Error generating QR Code:', error);
+            console.error('QR Code Generation Error:', error);
         }
     }
     
     // کپی QR Code به حافظه
     async function copyQRCodeToClipboard() {
-        if (!qrCodeInstance) {
+        if (!qrCodeImageUrl) {
             showMessage('لطفاً ابتدا QR Code را تولید کنید', 'error');
             return;
         }
         
-        const canvas = qrcodeContainer.querySelector('canvas');
-        
-        if (!canvas) {
-            showMessage('خطا در پیدا کردن QR Code تولید شده', 'error');
-            return;
-        }
-        
         try {
-            // روش جدید برای کپی تصویر
-            canvas.toBlob(async function(blob) {
-                try {
-                    await navigator.clipboard.write([
-                        new ClipboardItem({ 'image/png': blob })
-                    ]);
-                    showMessage('QR Code با موفقیت در حافظه کپی شد', 'success');
-                } catch (err) {
-                    console.error('Failed to copy:', err);
-                    showMessage('خطا در کپی کردن: ' + err.message, 'error');
-                }
-            });
-        } catch (error) {
+            // دریافت تصویر به صورت Blob
+            const response = await fetch(qrCodeImageUrl);
+            const blob = await response.blob();
+            
+            await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': blob })
+            ]);
+            
+            showMessage('QR Code با موفقیت در حافظه کپی شد', 'success');
+        } catch (err) {
+            console.error('Copy Error:', err);
+            showMessage('خطا در کپی کردن: ' + err.message, 'error');
+            
             // روش جایگزین برای مرورگرهای قدیمی
             try {
-                canvas.toBlob(function(blob) {
-                    const item = new ClipboardItem({ "image/png": blob });
-                    navigator.clipboard.write([item])
-                        .then(() => {
-                            showMessage('QR Code با موفقیت در حافظه کپی شد', 'success');
-                        })
-                        .catch(err => {
-                            console.error('Failed to copy:', err);
-                            showMessage('خطا در کپی کردن: ' + err.message, 'error');
-                        });
-                });
-            } catch (err) {
-                console.error('Copy failed:', err);
+                const img = qrcodeContainer.querySelector('img');
+                if (img) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    
+                    canvas.toBlob(async function(blob) {
+                        await navigator.clipboard.write([
+                            new ClipboardItem({ 'image/png': blob })
+                        ]);
+                    });
+                }
+            } catch (fallbackErr) {
+                console.error('Fallback Copy Error:', fallbackErr);
                 showMessage('مرورگر شما از این قابلیت پشتیبانی نمی‌کند', 'error');
             }
         }
@@ -104,26 +112,19 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // دانلود QR Code
     function downloadQRCode() {
-        if (!qrCodeInstance) {
+        if (!qrCodeImageUrl) {
             showMessage('لطفاً ابتدا QR Code را تولید کنید', 'error');
-            return;
-        }
-        
-        const canvas = qrcodeContainer.querySelector('canvas');
-        
-        if (!canvas) {
-            showMessage('خطا در پیدا کردن QR Code تولید شده', 'error');
             return;
         }
         
         try {
             const link = document.createElement('a');
-            link.download = 'qrcode.png';
-            link.href = canvas.toDataURL('image/png');
+            link.download = 'qrcode_' + Date.now() + '.png';
+            link.href = qrCodeImageUrl;
             link.click();
             showMessage('QR Code با موفقیت دانلود شد', 'success');
         } catch (error) {
-            console.error('Download failed:', error);
+            console.error('Download Error:', error);
             showMessage('خطا در دانلود QR Code', 'error');
         }
     }
@@ -133,7 +134,6 @@ document.addEventListener('DOMContentLoaded', function() {
         messageDiv.textContent = text;
         messageDiv.className = 'message ' + type;
         
-        // پاک کردن پیام بعد از 5 ثانیه
         setTimeout(() => {
             if (messageDiv.textContent === text) {
                 messageDiv.className = 'message';
